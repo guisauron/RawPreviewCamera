@@ -1,4 +1,160 @@
-package com.example.rawpreviewcam
+package com.example.rawpreviewcam // Certifique-se que o package coincide com o seu projeto
+
+import android.Manifest
+import android.content.ContentValues
+import android.content.pm.PackageManager
+import android.graphics.*
+import android.os.Build
+import android.os.Bundle
+import android.provider.MediaStore
+import android.widget.Button
+import android.widget.Toast
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.*
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var viewFinder: PreviewView
+    private var imageAnalyzer: ImageAnalysis? = null
+    private var lastBitmap: Bitmap? = null
+    private lateinit var cameraExecutor: ExecutorService
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_main)
+
+        viewFinder = findViewById(R.id.viewFinder)
+        val btnSave = findViewById<Button>(R.id.save_button)
+
+        // 1. Pedir permissão
+        if (allPermissionsGranted()) {
+            startCamera()
+        } else {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.CAMERA), 10)
+        }
+
+        // 2. Botão de salvar pega o frame atual do analyzer
+        btnSave.setOnClickListener {
+            saveCurrentFrame()
+        }
+
+        cameraExecutor = Executors.newSingleThreadExecutor()
+    }
+
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+
+        cameraProviderFuture.addListener({
+            val cameraProvider: ProcessCameraProvider = cameraProviderFuture.get()
+
+            // Configuração do Preview (o que você vê na tela)
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(viewFinder.surfaceProvider)
+            }
+
+            // O SEGREDO: ImageAnalysis intercepta os frames crus do preview
+            imageAnalyzer = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_YUV_420_888)
+                .build()
+                .also {
+                    it.setAnalyzer(cameraExecutor) { imageProxy ->
+                        // Converte o frame atual para bitmap e guarda na memória
+                        val bitmap = imageProxy.toBitmap()
+                        if (bitmap != null) {
+                            // Ajusta rotação e espelhamento da selfie
+                            lastBitmap = rotateAndMirror(bitmap, imageProxy.imageInfo.rotationDegrees)
+                        }
+                        imageProxy.close()
+                    }
+                }
+
+            // Força Câmera Frontal
+            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalyzer)
+            } catch (exc: Exception) {
+                Toast.makeText(this, "Erro ao abrir câmera", Toast.LENGTH_SHORT).show()
+            }
+
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun rotateAndMirror(source: Bitmap, angle: Int): Bitmap {
+        val matrix = Matrix()
+        matrix.postRotate(angle.toFloat())
+        // Espelha horizontalmente para a selfie não ficar invertida (como no preview)
+        matrix.postScale(-1f, 1f, source.width / 2f, source.height / 2f)
+        return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
+    }
+
+    private fun saveCurrentFrame() {
+        val bitmapToSave = lastBitmap ?: run {
+            Toast.makeText(this, "Aguardando frame...", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val filename = "Preview_${System.currentTimeMillis()}.jpg"
+        val contentValues = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, filename)
+            put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/Camera")
+            }
+        }
+
+        val uri = contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+        uri?.let {
+            contentResolver.openOutputStream(it).use { stream ->
+                if (stream != null) {
+                    // Salva com qualidade máxima do frame capturado
+                    bitmapToSave.compress(Bitmap.CompressFormat.JPEG, 100, stream)
+                    Toast.makeText(this, "Frame salvo na galeria!", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // Extensão para converter os dados brutos (YUV) da câmera em Imagem (Bitmap)
+    private fun ImageProxy.toBitmap(): Bitmap? {
+        val nv21 = yuv420888ToNv21(this)
+        val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
+        val out = ByteArrayOutputStream()
+        yuvImage.compressToJpeg(Rect(0, 0, width, height), 100, out)
+        return BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
+    }
+
+    private fun yuv420888ToNv21(image: ImageProxy): ByteArray {
+        val yBuffer = image.planes[0].buffer
+        val uBuffer = image.planes[1].buffer
+        val vBuffer = image.planes[2].buffer
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+        val nv21 = ByteArray(ySize + uSize + vSize)
+        yBuffer.get(nv21, 0, ySize)
+        vBuffer.get(nv21, ySize, vSize)
+        uBuffer.get(nv21, ySize + vSize, uSize)
+        return nv21
+    }
+
+    private fun allPermissionsGranted() = ContextCompat.checkSelfPermission(
+        baseContext, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cameraExecutor.shutdown()
+    }
+}package com.example.rawpreviewcam
 
 import android.Manifest
 import android.content.pm.PackageManager
