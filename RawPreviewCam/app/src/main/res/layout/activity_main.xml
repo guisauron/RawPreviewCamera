@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:fitsSystemWindows="false">
+
+    <!-- Preview em tela cheia -->
+    <TextureView
+        android:id="@+id/textureView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <!-- Flash branco sutil no momento da captura (feedback visual) -->
+    <View
+        android:id="@+id/flashOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FFFFFFFF"
+        android:alpha="0"
+        android:visibility="visible" />
+
+    <!-- Scrim leve só embaixo, pra o botão nunca ficar "boiando" sem contraste -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="180dp"
+        android:layout_gravity="bottom"
+        android:background="@drawable/bottom_scrim" />
+
+    <!-- Indicador discreto de resolução, some sozinho -->
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="48dp"
+        android:textColor="#B3FFFFFF"
+        android:textSize="12sp"
+        android:letterSpacing="0.05"
+        android:alpha="0"
+        android:text="" />
+
+    <!-- Botão de disparo: anel fino + círculo interno com feedback de toque -->
+    <FrameLayout
+        android:id="@+id/captureButton"
+        android:layout_width="76dp"
+        android:layout_height="76dp"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="40dp"
+        android:background="@drawable/shutter_ring"
+        android:padding="6dp">
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="@drawable/shutter_inner_selector" />
+    </FrameLayout>
+
+</FrameLayout>
